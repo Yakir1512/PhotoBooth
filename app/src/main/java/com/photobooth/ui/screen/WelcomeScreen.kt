@@ -1,5 +1,6 @@
 package com.photobooth.ui.screen
 
+import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -18,13 +19,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.photobooth.data.model.AppLanguage
-import com.photobooth.data.model.AppTheme
+import com.photobooth.ui.viewmodel.PhotoBoothViewModel
 import com.photobooth.ui.viewmodel.SettingsViewModel
 
 @Composable
@@ -32,10 +35,11 @@ fun WelcomeScreen(
     onStartSession: () -> Unit,
     onOpenSettings: () -> Unit,
     settingsViewModel: SettingsViewModel = hiltViewModel(),
+    photoViewModel: PhotoBoothViewModel = hiltViewModel(),
 ) {
     val settings by settingsViewModel.settings.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Pulsing animation on SHOOT button
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -47,16 +51,24 @@ fun WelcomeScreen(
         label = "pulseScale"
     )
 
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val bgColor      = MaterialTheme.colorScheme.background
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Camera Preview Background
+        AndroidView(
+            factory = { ctx ->
+                PreviewView(ctx).apply {
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            update = { previewView ->
+                photoViewModel.bindCamera(lifecycleOwner, previewView)
+            }
+        )
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bgColor),
-        contentAlignment = Alignment.Center,
-    ) {
-        // ── Settings button (top-right corner) ──────────────────────────
+        // Dark overlay for readability
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)))
+
+        // Settings button
         IconButton(
             onClick = onOpenSettings,
             modifier = Modifier
@@ -67,28 +79,25 @@ fun WelcomeScreen(
             Icon(
                 imageVector = Icons.Default.Settings,
                 contentDescription = "Settings",
-                tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                tint = Color.White.copy(alpha = 0.7f),
                 modifier = Modifier.size(26.dp),
             )
         }
 
-        // ── Main content ─────────────────────────────────────────────────
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(32.dp),
+            modifier = Modifier.padding(32.dp).align(Alignment.Center),
         ) {
-            // Event name
             Text(
                 text = settings.eventName,
                 style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                color = Color.White.copy(alpha = 0.9f),
                 textAlign = TextAlign.Center,
             )
 
             Spacer(Modifier.height(12.dp))
 
-            // App title
             Text(
                 text = when (settings.appLanguage) {
                     AppLanguage.HEBREW    -> "פוטו בוט"
@@ -96,7 +105,7 @@ fun WelcomeScreen(
                     AppLanguage.BILINGUAL -> "PHOTO BOOTH · פוטו בוט"
                 },
                 style = MaterialTheme.typography.displayMedium,
-                color = primaryColor,
+                color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Black,
                 textAlign = TextAlign.Center,
                 letterSpacing = 4.sp,
@@ -104,7 +113,6 @@ fun WelcomeScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            // Subtitle
             Text(
                 text = when (settings.appLanguage) {
                     AppLanguage.HEBREW    -> "3 תמונות · 1 רגע מושלם"
@@ -112,14 +120,13 @@ fun WelcomeScreen(
                     AppLanguage.BILINGUAL -> "3 תמונות · 3 SHOTS"
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                color = Color.White.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
                 letterSpacing = 2.sp,
             )
 
             Spacer(Modifier.height(64.dp))
 
-            // ── SHOOT button ─────────────────────────────────────────────
             Box(
                 modifier = Modifier
                     .scale(pulseScale)
@@ -127,22 +134,15 @@ fun WelcomeScreen(
                     .clip(CircleShape)
                     .background(
                         brush = Brush.radialGradient(
-                            colors = listOf(primaryColor, primaryColor.copy(alpha = 0.7f)),
+                            colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)),
                         )
                     )
-                    .border(
-                        width = 3.dp,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.2f),
-                        shape = CircleShape,
-                    )
+                    .border(3.dp, Color.White.copy(alpha = 0.2f), CircleShape)
                     .clickable { onStartSession() },
                 contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "📸",
-                        fontSize = 52.sp,
-                    )
+                    Text(text = "📸", fontSize = 52.sp)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = when (settings.appLanguage) {
@@ -160,7 +160,6 @@ fun WelcomeScreen(
 
             Spacer(Modifier.height(40.dp))
 
-            // Photo count hint
             Text(
                 text = when (settings.appLanguage) {
                     AppLanguage.HEBREW    -> "יצלמו 3 תמונות אחת אחרי השנייה"
@@ -168,7 +167,7 @@ fun WelcomeScreen(
                     AppLanguage.BILINGUAL -> "יצלמו 3 תמונות   •   3 photos in sequence"
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f),
+                color = Color.White.copy(alpha = 0.6f),
                 textAlign = TextAlign.Center,
             )
         }

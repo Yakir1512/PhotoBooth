@@ -154,7 +154,7 @@ fun ReviewScreen(
                 enabled  = stripUri != null,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape    = RoundedCornerShape(16.dp),
-                colors   = OutlinedButtonDefaults.outlinedButtonColors(
+                colors   = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.primary,
                 ),
             ) {
@@ -178,7 +178,7 @@ fun ReviewScreen(
                     enabled  = stripUri != null,
                     modifier = Modifier.weight(1f).height(52.dp),
                     shape    = RoundedCornerShape(16.dp),
-                    colors   = OutlinedButtonDefaults.outlinedButtonColors(
+                    colors   = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color(0xFF25D366),  // WhatsApp green
                     ),
                 ) {
@@ -190,7 +190,7 @@ fun ReviewScreen(
                     enabled  = stripUri != null,
                     modifier = Modifier.weight(1f).height(52.dp),
                     shape    = RoundedCornerShape(16.dp),
-                    colors   = OutlinedButtonDefaults.outlinedButtonColors(
+                    colors   = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color(0xFF1976D2),  // Bluetooth blue
                     ),
                 ) {

@@ -2,6 +2,8 @@ package com.photobooth.ui.viewmodel
 
 import android.graphics.Bitmap
 import android.net.Uri
+import androidx.camera.view.PreviewView
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.photobooth.data.model.*
@@ -18,14 +20,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/**
- * Central ViewModel for the photo capture session.
- *
- * Implements a clean STATE MACHINE:
- *   IDLE → COUNTING_DOWN → CAPTURING → WAITING_NEXT → (repeat 3x) → PROCESSING → REVIEW
- *
- * All state mutations happen through well-named functions (no raw setState soup).
- */
 @HiltViewModel
 class PhotoBoothViewModel @Inject constructor(
     private val cameraService: CameraService,
@@ -35,16 +29,13 @@ class PhotoBoothViewModel @Inject constructor(
     private val sharePhotosUseCase: SharePhotosUseCase,
 ) : ViewModel() {
 
-    // ── Exposed State ──────────────────────────────────────────────────────
     private val _session = MutableStateFlow(PhotoSession())
     val session: StateFlow<PhotoSession> = _session.asStateFlow()
 
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
-    // Captured bitmaps (held in memory for compositing; not serialised to StateFlow)
     private val capturedBitmaps = mutableListOf<Bitmap>()
-
     private var countdownJob: Job? = null
 
     init {
@@ -53,111 +44,19 @@ class PhotoBoothViewModel @Inject constructor(
         }
     }
 
-    // ── Public API ─────────────────────────────────────────────────────────
+    fun bindCamera(lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
+        cameraService.bindPreview(
+            lifecycleOwner = lifecycleOwner,
+            previewView    = previewView,
+            useFrontCamera = _settings.value.useFrontCamera
+        )
+    }
 
-    /** Called when user taps SHOOT on the welcome screen */
     fun startSession() {
         capturedBitmaps.clear()
         _session.value = PhotoSession(sessionState = SessionState.COUNTING_DOWN)
         startCountdown()
     }
-
-    /** Called when countdown finishes – trigger capture */
-    private fun onCountdownFinished() {
-        _session.update { it.copy(sessionState = SessionState.CAPTURING) }
-        captureNextPhoto()
-    }
-
-    private fun captureNextPhoto() {
-        viewModelScope.launch {
-            val bitmap = cameraService.capturePhoto()
-            if (bitmap != null) {
-                capturedBitmaps.add(bitmap)
-                val newIndex = _session.value.capturedPhotos.size  // before adding
-                _session.update { session ->
-                    session.copy(
-                        currentPhotoIndex = newIndex + 1,
-                        sessionState = if (capturedBitmaps.size < 3)
-                            SessionState.WAITING_NEXT
-                        else
-                            SessionState.PROCESSING,
-                    )
-                }
-
-                if (capturedBitmaps.size < 3) {
-                    // Short pause, then next countdown
-                    delay(_settings.value.delayBetweenPhotos * 1000L)
-                    _session.update { it.copy(sessionState = SessionState.COUNTING_DOWN) }
-                    startCountdown()
-                } else {
-                    // All 3 taken → build strip
-                    buildStrip()
-                }
-            } else {
-                // Camera error – reset gracefully
-                _session.update { it.copy(sessionState = SessionState.IDLE) }
-            }
-        }
-    }
-
-    private fun buildStrip() {
-        viewModelScope.launch {
-            val sessionId = _session.value.id
-            val stripUri = buildPhotoStripUseCase(
-                photos    = capturedBitmaps.toList(),
-                frame     = _settings.value.selectedFrame,
-                sessionId = sessionId,
-            )
-            _session.update { it.copy(
-                compositeStripUri = stripUri,
-                sessionState      = SessionState.REVIEW,
-            )}
-
-            // Auto-print if enabled
-            if (_settings.value.autoPrint && stripUri != null) {
-                triggerPrint(stripUri)
-            }
-        }
-    }
-
-    fun triggerPrint(uri: Uri) {
-        val currentSession = _session.value
-        viewModelScope.launch {
-            _session.update { it.copy(sessionState = SessionState.PRINTING) }
-            val result = printStripUseCase(
-                stripUri   = uri,
-                printCount = currentSession.printCount,
-                maxPrints  = _settings.value.maxPrintsPerSession,
-            )
-            when (result) {
-                is PrintResult.Success -> _session.update {
-                    it.copy(printCount = it.printCount + 1, sessionState = SessionState.REVIEW)
-                }
-                else -> _session.update { it.copy(sessionState = SessionState.REVIEW) }
-            }
-        }
-    }
-
-    fun shareViaSystem(uri: Uri) {
-        sharePhotosUseCase.shareSystem(uri, _settings.value.eventName)
-    }
-
-    fun shareViaWhatsApp(uri: Uri) {
-        sharePhotosUseCase.shareWhatsApp(uri)
-    }
-
-    fun shareViaBluetooth(uri: Uri) {
-        sharePhotosUseCase.shareBluetooth(uri)
-    }
-
-    fun resetSession() {
-        countdownJob?.cancel()
-        capturedBitmaps.forEach { it.recycle() }
-        capturedBitmaps.clear()
-        _session.value = PhotoSession(sessionState = SessionState.IDLE)
-    }
-
-    // ── Private Helpers ────────────────────────────────────────────────────
 
     private fun startCountdown() {
         countdownJob?.cancel()
@@ -169,6 +68,83 @@ class PhotoBoothViewModel @Inject constructor(
             }
             onCountdownFinished()
         }
+    }
+
+    private fun onCountdownFinished() {
+        _session.update { it.copy(sessionState = SessionState.CAPTURING) }
+        captureNextPhoto()
+    }
+
+    private fun captureNextPhoto() {
+        viewModelScope.launch {
+            val bitmap = cameraService.capturePhoto()
+            if (bitmap != null) {
+                capturedBitmaps.add(bitmap)
+                val count = capturedBitmaps.size
+                
+                if (count < 3) {
+                    _session.update { it.copy(
+                        currentPhotoIndex = count,
+                        sessionState      = SessionState.WAITING_NEXT
+                    )}
+                    delay(1500L)
+                    _session.update { it.copy(sessionState = SessionState.COUNTING_DOWN) }
+                    startCountdown()
+                } else {
+                    _session.update { it.copy(
+                        currentPhotoIndex = count,
+                        sessionState      = SessionState.PROCESSING 
+                    )}
+                    buildStrip()
+                }
+            } else {
+                _session.update { it.copy(sessionState = SessionState.IDLE) }
+            }
+        }
+    }
+
+    private fun buildStrip() {
+        viewModelScope.launch {
+            val stripUri = buildPhotoStripUseCase(
+                photos    = capturedBitmaps.toList(),
+                frame     = _settings.value.selectedFrame,
+                sessionId = _session.value.id,
+            )
+            _session.update { it.copy(
+                compositeStripUri = stripUri,
+                sessionState      = SessionState.REVIEW,
+            )}
+            if (_settings.value.autoPrint && stripUri != null) {
+                triggerPrint(stripUri)
+            }
+        }
+    }
+
+    fun triggerPrint(uri: Uri) {
+        viewModelScope.launch {
+            val currentSession = _session.value
+            _session.update { it.copy(sessionState = SessionState.PRINTING) }
+            val result = printStripUseCase(
+                stripUri   = uri,
+                printCount = currentSession.printCount,
+                maxPrints  = _settings.value.maxPrintsPerSession,
+            )
+            _session.update { it.copy(
+                printCount   = if (result is PrintResult.Success) it.printCount + 1 else it.printCount,
+                sessionState = SessionState.REVIEW
+            )}
+        }
+    }
+
+    fun shareViaSystem(uri: Uri) = sharePhotosUseCase.shareSystem(uri, _settings.value.eventName)
+    fun shareViaWhatsApp(uri: Uri) = sharePhotosUseCase.shareWhatsApp(uri)
+    fun shareViaBluetooth(uri: Uri) = sharePhotosUseCase.shareBluetooth(uri)
+
+    fun resetSession() {
+        countdownJob?.cancel()
+        capturedBitmaps.forEach { it.recycle() }
+        capturedBitmaps.clear()
+        _session.value = PhotoSession(sessionState = SessionState.IDLE)
     }
 
     override fun onCleared() {
