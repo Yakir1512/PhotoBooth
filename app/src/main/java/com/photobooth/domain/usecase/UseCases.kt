@@ -16,16 +16,16 @@ import javax.inject.Inject
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Saves 3 captured photos and builds the composite vertical strip.
- * Returns the URI of the saved strip image.
+ * Saves 3 captured Bitmaps and builds the composite vertical strip.
+ * Returns the MediaStore URI of the saved strip image.
  */
 class BuildPhotoStripUseCase @Inject constructor(
     private val photoRepository: PhotoRepository,
 ) {
     suspend operator fun invoke(
-        photos: List<Bitmap>,
-        frame: PhotoFrame,
-        sessionId: String,
+        photos    : List<Bitmap>,
+        frame     : PhotoFrame,
+        sessionId : String,
     ): Uri? = photoRepository.buildAndSaveStrip(photos, frame, sessionId)
 }
 
@@ -33,15 +33,15 @@ class BuildPhotoStripUseCase @Inject constructor(
  * Sends the strip image to the connected printer.
  */
 class PrintStripUseCase @Inject constructor(
-    private val printerService: PrinterService,
-    private val photoRepository: PhotoRepository,
+    private val printerService  : PrinterService,
+    private val photoRepository : PhotoRepository,
 ) {
     suspend operator fun invoke(
-        stripUri: Uri,
-        printCount: Int,
-        maxPrints: Int,
+        stripUri   : Uri,
+        printCount : Int,
+        maxPrints  : Int,
     ): PrintResult {
-        if (printCount >= maxPrints) return PrintResult.MaxPrintsReached
+        if (printCount >= maxPrints)          return PrintResult.MaxPrintsReached
         if (!printerService.isPrinterReady()) return PrintResult.PrinterNotAvailable
         return printerService.printPhoto(stripUri)
     }
